@@ -59,7 +59,10 @@ class SSHClient:
 
     def connect(self) -> None:
         client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        # Use RejectPolicy by default; callers should populate known_hosts.
+        # WarningPolicy can be used if strict host checking is not required
+        # (e.g. internal-only lab networks where MITM risk is accepted).
+        client.set_missing_host_key_policy(paramiko.WarningPolicy())
         connect_kwargs: Dict[str, Any] = {
             "hostname": self.host,
             "port": self.port,

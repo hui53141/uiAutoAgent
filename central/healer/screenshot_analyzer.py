@@ -90,8 +90,7 @@ class ScreenshotAnalyzer:
         if not self.api_key:
             logger.warning(
                 "No LLM API key configured. Returning empty analysis. "
-                "Set %s env var to enable AI healing.",
-                get_settings()["central"]["healer"]["llm_api_key_env"],
+                "Set the LLM API key environment variable to enable AI healing."
             )
             return self._empty_analysis(error)
 

@@ -115,7 +115,7 @@ class TestDeviceManagerAcquire:
         start1 = results.index("start-1")
         end1 = results.index("end-1")
         start2 = results.index("start-2")
-        assert end1 < start2 or start1 > results.index("end-2"), (
+        assert end1 < start2, (
             f"Interleaved execution detected: {results}"
         )
 

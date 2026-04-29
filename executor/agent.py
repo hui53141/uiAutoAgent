@@ -253,12 +253,13 @@ class ExecutorAgent:
             out_dir = Path("/tmp/uiAutoAgent/screenshots")
             out_dir.mkdir(parents=True, exist_ok=True)
             path = str(out_dir / f"{serial}_{int(time.time())}.png")
-            subprocess.run(
-                ["adb", "-s", serial, "exec-out", "screencap", "-p"],
-                stdout=open(path, "wb"),
-                timeout=10,
-                check=True,
-            )
+            with open(path, "wb") as stdout_file:
+                subprocess.run(
+                    ["adb", "-s", serial, "exec-out", "screencap", "-p"],
+                    stdout=stdout_file,
+                    timeout=10,
+                    check=True,
+                )
             return path
         except Exception as exc:
             logger.warning("Failed to capture screenshot for %s: %s", serial, exc)

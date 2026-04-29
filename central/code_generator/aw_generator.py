@@ -111,8 +111,8 @@ class AWGenerator:
 
         if not self.api_key:
             logger.warning(
-                "No LLM API key; returning stub code. Set %s env var.",
-                get_settings()["central"]["healer"]["llm_api_key_env"],
+                "No LLM API key; returning stub code. "
+                "Set the LLM API key environment variable to enable code generation."
             )
             return self._stub_code(class_name, page, operations)
 
