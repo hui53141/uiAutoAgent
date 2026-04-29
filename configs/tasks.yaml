@@ -1,0 +1,64 @@
+# Test task definitions
+# 测试任务配置
+
+tasks:
+  - id: "smoke-login"
+    name: "Login Smoke Test"
+    description: "验证登录基本流程"
+    aw_class: "aw.examples.login_aw.LoginAW"
+    method: "run_smoke"
+    params:
+      username: "${TEST_USERNAME}"
+      password: "${TEST_PASSWORD}"
+    target_nodes:
+      - "node-01"
+      - "node-02"
+    tags:
+      - "smoke"
+      - "login"
+    timeout: 120
+    retry: 2
+    on_failure: "report"   # report | skip | abort
+
+  - id: "regression-settings"
+    name: "Settings Regression"
+    description: "设置页面全功能回归"
+    aw_class: "aw.examples.settings_aw.SettingsAW"
+    method: "run_full_regression"
+    params: {}
+    target_nodes:
+      - "node-01"
+    tags:
+      - "regression"
+      - "settings"
+    timeout: 300
+    retry: 1
+    on_failure: "report"
+
+  - id: "hardware-reboot"
+    name: "Hardware Reboot Test"
+    description: "通过继电器控制设备重启后自动化"
+    aw_class: "aw.examples.login_aw.LoginAW"
+    method: "run_after_reboot"
+    params:
+      relay_channel: 1
+    target_nodes:
+      - "node-01"
+    tags:
+      - "hardware"
+    timeout: 180
+    retry: 0
+    on_failure: "abort"
+
+suites:
+  - id: "nightly"
+    name: "Nightly Suite"
+    tasks:
+      - "smoke-login"
+      - "regression-settings"
+    schedule: "0 2 * * *"   # cron expression (2 AM daily)
+
+  - id: "quick-smoke"
+    name: "Quick Smoke"
+    tasks:
+      - "smoke-login"

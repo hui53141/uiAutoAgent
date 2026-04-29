@@ -1,0 +1,35 @@
+# uiAutoAgent dependencies
+# Install with: pip install -r requirements.txt
+
+# ── Core ────────────────────────────────────────────────────────────────────
+PyYAML>=6.0
+requests>=2.31.0
+
+# ── Central server ──────────────────────────────────────────────────────────
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.7.0
+
+# ── Executor / Drivers ──────────────────────────────────────────────────────
+# Appium Python client (for AppiumDriver)
+Appium-Python-Client>=3.1.0
+
+# Paramiko for SSH (HardwareDriver)
+paramiko>=3.4.0
+
+# PySerial for relay board (HardwareDriver)
+pyserial>=3.5
+
+# ── AI / LLM (optional, for self-healing and code generation) ───────────────
+# OpenAI GPT-4o / GPT-4 Vision
+openai>=1.30.0
+
+# Anthropic Claude (alternative)
+anthropic>=0.28.0
+
+# ── Testing ─────────────────────────────────────────────────────────────────
+pytest>=8.2.0
+pytest-asyncio>=0.23.0
+
+# ── Development utilities ────────────────────────────────────────────────────
+python-dotenv>=1.0.0   # load .env for API keys / credentials
