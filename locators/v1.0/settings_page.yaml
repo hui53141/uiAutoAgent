@@ -1,0 +1,46 @@
+# Locator definitions for Settings page - v1.0
+version: "1.0"
+page: "settings"
+
+elements:
+  wifi_toggle:
+    description: "Wi-Fi 开关"
+    strategies:
+      - strategy: accessibility_id
+        value: "wifi_switch"
+      - strategy: id
+        value: "com.example.app:id/sw_wifi"
+      - strategy: xpath
+        value: "//android.widget.Switch[@content-desc='Wi-Fi']"
+
+  bluetooth_toggle:
+    description: "蓝牙开关"
+    strategies:
+      - strategy: accessibility_id
+        value: "bluetooth_switch"
+      - strategy: id
+        value: "com.example.app:id/sw_bluetooth"
+      - strategy: xpath
+        value: "//android.widget.Switch[@content-desc='蓝牙']"
+
+  about_button:
+    description: "关于本机"
+    strategies:
+      - strategy: accessibility_id
+        value: "about_device"
+      - strategy: xpath
+        value: "//android.widget.TextView[@text='关于本机']"
+
+  language_item:
+    description: "语言设置入口"
+    strategies:
+      - strategy: xpath
+        value: "//android.widget.TextView[@text='语言与输入法']"
+
+  notification_item:
+    description: "通知设置"
+    strategies:
+      - strategy: accessibility_id
+        value: "notification_settings"
+      - strategy: xpath
+        value: "//android.widget.TextView[@text='通知']"

@@ -1,0 +1,51 @@
+# Locator definitions for Login page - v1.0
+# 登录页面元素定位符（v1.0）
+version: "1.0"
+page: "login"
+
+elements:
+  username_input:
+    description: "用户名输入框"
+    strategies:
+      - strategy: accessibility_id
+        value: "username_input"
+      - strategy: id
+        value: "com.example.app:id/et_username"
+      - strategy: xpath
+        value: "//android.widget.EditText[@hint='请输入用户名']"
+
+  password_input:
+    description: "密码输入框"
+    strategies:
+      - strategy: accessibility_id
+        value: "password_input"
+      - strategy: id
+        value: "com.example.app:id/et_password"
+      - strategy: xpath
+        value: "//android.widget.EditText[@hint='请输入密码']"
+
+  login_button:
+    description: "登录按钮"
+    strategies:
+      - strategy: accessibility_id
+        value: "login_btn"
+      - strategy: id
+        value: "com.example.app:id/btn_login"
+      - strategy: xpath
+        value: "//android.widget.Button[@text='登录']"
+
+  error_message:
+    description: "错误提示文本"
+    strategies:
+      - strategy: id
+        value: "com.example.app:id/tv_error"
+      - strategy: xpath
+        value: "//android.widget.TextView[contains(@text,'错误') or contains(@text,'失败')]"
+
+  forgot_password_link:
+    description: "忘记密码链接"
+    strategies:
+      - strategy: accessibility_id
+        value: "forgot_password"
+      - strategy: xpath
+        value: "//android.widget.TextView[@text='忘记密码']"

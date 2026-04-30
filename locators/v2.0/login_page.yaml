@@ -1,0 +1,59 @@
+# Locator definitions for Login page - v2.0 (UI redesign)
+# 登录页面元素定位符（v2.0 - UI 重设计版本）
+version: "2.0"
+page: "login"
+
+elements:
+  username_input:
+    description: "用户名输入框（新版使用手机号）"
+    strategies:
+      - strategy: accessibility_id
+        value: "phone_number_input"
+      - strategy: id
+        value: "com.example.app:id/input_phone"
+      - strategy: xpath
+        value: "//android.widget.EditText[@hint='请输入手机号']"
+
+  password_input:
+    description: "密码输入框"
+    strategies:
+      - strategy: accessibility_id
+        value: "password_field"
+      - strategy: id
+        value: "com.example.app:id/input_password"
+      - strategy: xpath
+        value: "//android.widget.EditText[@hint='请输入密码']"
+
+  login_button:
+    description: "登录按钮（新版文案：立即登录）"
+    strategies:
+      - strategy: accessibility_id
+        value: "btn_login_now"
+      - strategy: id
+        value: "com.example.app:id/btn_login_now"
+      - strategy: xpath
+        value: "//android.widget.Button[@text='立即登录']"
+
+  error_message:
+    description: "错误提示（新版 Toast 形式）"
+    strategies:
+      - strategy: xpath
+        value: "//android.widget.Toast"
+      - strategy: id
+        value: "com.example.app:id/snackbar_text"
+
+  forgot_password_link:
+    description: "忘记密码"
+    strategies:
+      - strategy: accessibility_id
+        value: "link_forgot"
+      - strategy: xpath
+        value: "//android.widget.TextView[@text='忘记密码？']"
+
+  sms_login_tab:
+    description: "短信验证码登录 Tab（新增）"
+    strategies:
+      - strategy: accessibility_id
+        value: "tab_sms_login"
+      - strategy: xpath
+        value: "//android.widget.Tab[@text='短信登录']"

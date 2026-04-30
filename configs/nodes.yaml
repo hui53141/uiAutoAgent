@@ -1,0 +1,42 @@
+# Executor node registry
+# 执行节点清单
+# Each entry represents one remote PC running executor/agent.py
+
+nodes:
+  - id: "node-01"
+    host: "192.168.1.101"
+    port: 22
+    username: "runner"
+    ssh_key_path: "~/.ssh/id_rsa"
+    appium_port: 4723
+    devices:
+      - serial: "emulator-5554"
+        type: "emulator"
+        name: "Pixel_6_API_33"
+      - serial: "R5CT20XXXXX"
+        type: "physical"
+        name: "Samsung_S21"
+    tags:
+      - "regression"
+      - "smoke"
+
+  - id: "node-02"
+    host: "192.168.1.102"
+    port: 22
+    username: "runner"
+    ssh_key_path: "~/.ssh/id_rsa"
+    appium_port: 4723
+    devices:
+      - serial: "emulator-5556"
+        type: "emulator"
+        name: "Pixel_4_API_31"
+      - serial: "ZY22B7XXXXX"
+        type: "physical"
+        name: "Motorola_G9"
+    tags:
+      - "regression"
+
+  # Add more nodes as needed
+  # - id: "node-03"
+  #   host: "192.168.1.103"
+  #   ...

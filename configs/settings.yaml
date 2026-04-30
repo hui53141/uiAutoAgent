@@ -1,0 +1,69 @@
+# Global settings for uiAutoAgent
+# 全局配置
+
+central:
+  # Central server address (where healer + code_generator run)
+  host: "0.0.0.0"
+  port: 8000
+  # GitHub repo for config/code distribution
+  github_repo: "your-org/uiAutoAgent"
+  github_branch: "main"
+  github_token_env: "GITHUB_TOKEN"   # env var name
+
+  healer:
+    # Minimum identical failures across nodes before triggering LLM repair
+    aggregation_threshold: 2
+    # Directory where executor nodes POST failure reports
+    failure_report_dir: "/tmp/uiAutoAgent/failures"
+    screenshot_dir: "/tmp/uiAutoAgent/screenshots"
+    # LLM provider: openai | azure | anthropic
+    llm_provider: "openai"
+    llm_model: "gpt-4o"
+    llm_api_key_env: "OPENAI_API_KEY"
+    llm_max_tokens: 4096
+
+  code_generator:
+    # Template directory for AW code generation
+    template_dir: "central/code_generator/templates"
+    output_dir: "aw"
+
+executor:
+  # How often (seconds) executor polls GitHub for updates
+  sync_interval: 60
+  # Local workspace root
+  workspace: "/tmp/uiAutoAgent/workspace"
+  # Default task timeout (seconds)
+  task_timeout: 300
+  # Retry settings
+  max_retries: 3
+  retry_delay: 5
+
+  device_manager:
+    # Appium server address (local on executor PC)
+    appium_host: "localhost"
+    appium_port: 4723
+    # Max concurrent devices per executor
+    max_devices: 8
+    # Device connection timeout
+    connect_timeout: 30
+    # SSH keep-alive interval (seconds)
+    ssh_keepalive_interval: 30
+
+locator:
+  # App version detection: adb shell dumpsys package <pkg> | grep versionName
+  app_package: "com.example.app"
+  # Path to versioned locator files (relative to project root)
+  locator_root: "locators"
+  # Fallback strategy order: accessibility_id > xpath > image
+  fallback_order:
+    - accessibility_id
+    - id
+    - xpath
+    - image
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+  file: "/tmp/uiAutoAgent/logs/uiAutoAgent.log"
+  max_bytes: 10485760   # 10 MB
+  backup_count: 5
