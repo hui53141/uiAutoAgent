@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import ExitStack
 import json
 from pathlib import Path
 
@@ -49,42 +50,37 @@ class ArtifactUploader:
         )
         form.add_field("video_flags", json.dumps(collector.get_video_flags()))
 
-        opened_files = []
         try:
-            for failure in failures:
-                if failure.log_path and Path(failure.log_path).exists():
-                    log_file = open(failure.log_path, "rb")
-                    opened_files.append(log_file)
-                    form.add_field(
-                        "logs",
-                        log_file,
-                        filename=f"{failure.task_id}__{Path(failure.log_path).name}",
-                        content_type="text/plain",
-                    )
-                for screenshot_path in failure.screenshot_paths:
-                    if Path(screenshot_path).exists():
-                        screenshot_file = open(screenshot_path, "rb")
-                        opened_files.append(screenshot_file)
-                        content_type = "image/png"
-                        if screenshot_path.lower().endswith((".jpg", ".jpeg")):
-                            content_type = "image/jpeg"
+            with ExitStack() as stack:
+                for failure in failures:
+                    if failure.log_path and Path(failure.log_path).exists():
+                        log_file = stack.enter_context(open(failure.log_path, "rb"))
                         form.add_field(
-                            "screenshots",
-                            screenshot_file,
-                            filename=f"{failure.task_id}__{Path(screenshot_path).name}",
-                            content_type=content_type,
+                            "logs",
+                            log_file,
+                            filename=f"{failure.task_id}__{Path(failure.log_path).name}",
+                            content_type="text/plain",
                         )
+                    for screenshot_path in failure.screenshot_paths:
+                        if Path(screenshot_path).exists():
+                            screenshot_file = stack.enter_context(open(screenshot_path, "rb"))
+                            content_type = "image/png"
+                            if screenshot_path.lower().endswith((".jpg", ".jpeg")):
+                                content_type = "image/jpeg"
+                            form.add_field(
+                                "screenshots",
+                                screenshot_file,
+                                filename=f"{failure.task_id}__{Path(screenshot_path).name}",
+                                content_type=content_type,
+                            )
 
-            timeout = aiohttp.ClientTimeout(total=180)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.post(url, data=form) as response:
-                    if response.status >= 400:
-                        logger.warning("Artifact upload failed: %s %s", response.status, await response.text())
-                        return False
-                    return True
+                timeout = aiohttp.ClientTimeout(total=180)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.post(url, data=form) as response:
+                        if response.status >= 400:
+                            logger.warning("Artifact upload failed: %s %s", response.status, await response.text())
+                            return False
+                        return True
         except Exception as exc:
             logger.warning("Artifact upload failed: %s", exc)
             return False
-        finally:
-            for opened in opened_files:
-                opened.close()

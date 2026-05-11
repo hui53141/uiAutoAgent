@@ -223,9 +223,10 @@ async def test_agent_server_heal_runs_tool_loop(mini_project: Path, tmp_path: Pa
     )
 
     generated_code = (mini_project / "aw" / "examples" / "login_aw.py").read_text(encoding="utf-8")
+    fake_llm = FakeLLMClient(generated_code)
     agent_server = AgentServer(
         artifact_store=store,
-        llm_client=FakeLLMClient(generated_code),
+        llm_client=fake_llm,
         project_root=str(mini_project),
     )
 
@@ -234,4 +235,4 @@ async def test_agent_server_heal_runs_tool_loop(mini_project: Path, tmp_path: Pa
     assert result.success is True
     assert result.fixed_files == ["aw/examples/login_aw.py"]
     assert result.affected_task_ids == ["task-1"]
-    assert result.iterations == 7
+    assert result.iterations == fake_llm.tool_turn

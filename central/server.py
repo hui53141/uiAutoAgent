@@ -292,7 +292,10 @@ async def post_failure(
         save_dir = Path(_healer_cfg.get("screenshot_dir", "/tmp/uiAutoAgent/screenshots"))
         save_dir.mkdir(parents=True, exist_ok=True)
         safe_task_id = re.sub(r"[^a-zA-Z0-9_\-]", "_", data.get("task_id", "unknown"))[:64]
-        filename = f"{safe_task_id}_{int(time.time())}.png"
+        suffix = Path(screenshot.filename or "").suffix.lower()
+        if suffix not in {".png", ".jpg", ".jpeg"}:
+            suffix = ".png"
+        filename = f"{safe_task_id}_{int(time.time())}{suffix}"
         screenshot_path = str(save_dir / filename)
         content = await screenshot.read()
         Path(screenshot_path).write_bytes(content)
