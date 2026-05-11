@@ -56,7 +56,7 @@ class ArtifactUploader:
                     log_file = open(failure.log_path, "rb")
                     opened_files.append(log_file)
                     form.add_field(
-                        "logs[]",
+                        "logs",
                         log_file,
                         filename=f"{failure.task_id}__{Path(failure.log_path).name}",
                         content_type="text/plain",
@@ -69,7 +69,7 @@ class ArtifactUploader:
                         if screenshot_path.lower().endswith((".jpg", ".jpeg")):
                             content_type = "image/jpeg"
                         form.add_field(
-                            "screenshots[]",
+                            "screenshots",
                             screenshot_file,
                             filename=f"{failure.task_id}__{Path(screenshot_path).name}",
                             content_type=content_type,
