@@ -22,6 +22,17 @@ central:
     llm_api_key_env: "OPENAI_API_KEY"
     llm_max_tokens: 4096
 
+  agent_server:
+    llm_provider: "openai"        # openai | anthropic | azure_openai
+    llm_model: "gpt-4o"
+    llm_max_tokens: 4096
+    llm_api_key_env: "OPENAI_API_KEY"
+    max_heal_rounds: 10
+    max_iterations_per_round: 15
+
+  artifact_store:
+    base_dir: "/tmp/uiAutoAgent/artifacts"
+
   code_generator:
     # Template directory for AW code generation
     template_dir: "central/code_generator/templates"

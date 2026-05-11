@@ -7,36 +7,57 @@ Endpoints:
   GET  /tasks/pending/{node}   - executor fetches its pending tasks
   POST /results                - executor posts task results
   POST /failures               - executor posts failure reports (+ screenshot)
+  POST /upload/batch/{batch_id}- executor posts batch failure artifacts
   POST /generate/aw            - trigger AW code generation
   GET  /health                 - health check
+  GET  /video/{node}/{task}    - Phase 1 stub for video pull-through
+  WS   /ws/{node_id}           - executor control plane
 
 Self-healing pipeline:
-  POST /failures → FailureAggregator → (threshold crossed) →
-    ScreenshotAnalyzer (LLM) → FixCommitter (git commit + push)
+  batch_done websocket event → AgentServer skill loop → script_update websocket push
+
+Fallback pipeline (kept for compatibility):
+  POST /failures → FailureAggregator → ScreenshotAnalyzer → FixCommitter
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
+import re
+import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
+import aiofiles
 import uvicorn
-import yaml
-from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import (
+    BackgroundTasks,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from uiAutoAgent.central.agent_server import AgentServer
+from uiAutoAgent.central.artifact_store import ArtifactStore
 from uiAutoAgent.central.code_generator.aw_generator import AWGenerator
 from uiAutoAgent.central.healer.failure_aggregator import FailureAggregator, FailureReport
 from uiAutoAgent.central.healer.fix_committer import FixCommitter
 from uiAutoAgent.central.healer.screenshot_analyzer import ScreenshotAnalyzer
+from uiAutoAgent.central.ws_manager import WSManager
 from uiAutoAgent.core import get_settings, setup_logging
 
 logger = setup_logging("CentralServer")
 settings = get_settings()
+_ROOT = Path(__file__).resolve().parent.parent
 
 app = FastAPI(
     title="uiAutoAgent Central Server",
@@ -44,48 +65,47 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# ---------------------------------------------------------------------------
-# State (in-memory; use Redis/DB for production scale)
-# ---------------------------------------------------------------------------
-
 _nodes: Dict[str, Dict[str, Any]] = {}
-_task_queue: Dict[str, List[Dict[str, Any]]] = {}  # node_id -> [tasks]
+_task_queue: Dict[str, List[Dict[str, Any]]] = {}
 _results: List[Dict[str, Any]] = []
 _results_lock = threading.Lock()
-
-# ---------------------------------------------------------------------------
-# Self-healing pipeline setup
-# ---------------------------------------------------------------------------
+_validation_events: List[Dict[str, Any]] = []
 
 _healer_cfg = settings["central"]["healer"]
+_agent_cfg = settings.get("central", {}).get("agent_server", {})
+_artifact_cfg = settings.get("central", {}).get("artifact_store", {})
 _aggregator = FailureAggregator(
     threshold=_healer_cfg.get("aggregation_threshold", 2),
     persist_dir=_healer_cfg.get("failure_report_dir", "/tmp/uiAutoAgent/failures"),
 )
 _analyzer = ScreenshotAnalyzer()
 _committer = FixCommitter()
+_artifact_store = ArtifactStore(
+    base_dir=_artifact_cfg.get("base_dir", "/tmp/uiAutoAgent/artifacts")
+)
+_ws_manager = WSManager()
+_agent_server = AgentServer(
+    artifact_store=_artifact_store,
+    project_root=str(_ROOT),
+)
 
 
 def _on_threshold_reached(fingerprint: str, reports: List[FailureReport]) -> None:
     """
-    Healing pipeline: triggered when FailureAggregator reaches threshold.
-    Runs in a background thread (not blocking the request handler).
+    Legacy healing pipeline kept as a compatibility fallback for /failures.
+    Runs in a background thread and is separate from the new agent server flow.
     """
+
     def _heal() -> None:
         logger.info(
-            "Starting self-healing for fingerprint=%s (%d reports)",
+            "Starting fallback self-healing for fingerprint=%s (%d reports)",
             fingerprint,
             len(reports),
         )
-        # Use the first report that has a screenshot
         primary = next((r for r in reports if r.screenshot_path), reports[0])
-
-        # Infer page from task_id (convention: "task-{page}-..." or just use "unknown")
         parts = primary.task_id.replace("-", "_").split("_")
         page = parts[1] if len(parts) > 1 else "unknown"
         element = "unknown"
-
-        # Analyze screenshot with LLM
         analysis = _analyzer.analyze(
             screenshot_path=primary.screenshot_path or "",
             error=primary.error,
@@ -93,14 +113,6 @@ def _on_threshold_reached(fingerprint: str, reports: List[FailureReport]) -> Non
             page=page,
             element=element,
         )
-        logger.info(
-            "LLM diagnosis (fp=%s): %s (confidence=%.2f)",
-            fingerprint,
-            analysis.get("diagnosis"),
-            analysis.get("confidence", 0),
-        )
-
-        # Apply fix if LLM is confident
         if analysis.get("confidence", 0) >= 0.6 and analysis.get("proposed_strategies"):
             success = _committer.apply_fix(
                 fingerprint=fingerprint,
@@ -111,25 +123,20 @@ def _on_threshold_reached(fingerprint: str, reports: List[FailureReport]) -> Non
             )
             if success:
                 _aggregator.mark_healed(fingerprint)
-                logger.info("Self-healing complete for fp=%s", fingerprint)
+                logger.info("Fallback self-healing complete for fp=%s", fingerprint)
             else:
-                logger.warning("Fix commit failed for fp=%s", fingerprint)
+                logger.warning("Fallback fix commit failed for fp=%s", fingerprint)
         else:
             logger.warning(
-                "LLM confidence too low (%.2f) or no strategies proposed for fp=%s",
+                "Fallback LLM confidence too low (%.2f) or no strategies proposed for fp=%s",
                 analysis.get("confidence", 0),
                 fingerprint,
             )
 
-    t = threading.Thread(target=_heal, daemon=True)
-    t.start()
+    threading.Thread(target=_heal, daemon=True).start()
 
 
 _aggregator.on_threshold_reached(_on_threshold_reached)
-
-# ---------------------------------------------------------------------------
-# Pydantic models
-# ---------------------------------------------------------------------------
 
 
 class NodeRegistration(BaseModel):
@@ -174,10 +181,6 @@ class DispatchTaskRequest(BaseModel):
     device_serial: str
     node_ids: List[str]
 
-# ---------------------------------------------------------------------------
-# Routes
-# ---------------------------------------------------------------------------
-
 
 @app.get("/health")
 def health() -> Dict[str, Any]:
@@ -188,8 +191,6 @@ def health() -> Dict[str, Any]:
         "timestamp": time.time(),
     }
 
-
-# ------ Node management ------
 
 @app.post("/nodes/register")
 def register_node(reg: NodeRegistration) -> Dict[str, Any]:
@@ -209,11 +210,8 @@ def list_nodes() -> Dict[str, Any]:
     return {"nodes": list(_nodes.values())}
 
 
-# ------ Task management ------
-
 @app.post("/tasks/dispatch")
 def dispatch_task(req: DispatchTaskRequest) -> Dict[str, Any]:
-    """Push a task into the queue for specified nodes."""
     task = {
         "id": req.task_id,
         "aw_class": req.aw_class,
@@ -232,15 +230,11 @@ def dispatch_task(req: DispatchTaskRequest) -> Dict[str, Any]:
 
 @app.get("/tasks/pending/{node_id}")
 def get_pending_tasks(node_id: str) -> Dict[str, Any]:
-    """Executor nodes poll this endpoint to get their pending tasks."""
     if node_id in _nodes:
         _nodes[node_id]["last_seen"] = time.time()
-
     tasks = _task_queue.pop(node_id, [])
     return {"node_id": node_id, "tasks": tasks}
 
-
-# ------ Results ------
 
 @app.post("/results")
 def post_result(result: TaskResult) -> Dict[str, Any]:
@@ -273,26 +267,17 @@ def get_results(
     return {"results": filtered, "total": len(filtered)}
 
 
-# ------ Failure handling & self-healing ------
-
 @app.post("/failures")
 async def post_failure(
     background_tasks: BackgroundTasks,
     payload: Optional[str] = Form(default=None),
     screenshot: Optional[UploadFile] = File(default=None),
-    # Accept direct JSON body too
     task_id: Optional[str] = Form(default=None),
     node_id: Optional[str] = Form(default=None),
     device_serial: Optional[str] = Form(default=None),
     error: Optional[str] = Form(default=None),
 ) -> Dict[str, Any]:
-    """
-    Receive failure reports from executor nodes.
-    Supports multipart (with screenshot) or plain JSON.
-    """
     screenshot_path: Optional[str] = None
-
-    # Parse payload
     if payload:
         data = json.loads(payload)
     else:
@@ -303,14 +288,14 @@ async def post_failure(
             "error": error or "",
         }
 
-    # Save screenshot if provided
     if screenshot:
         save_dir = Path(_healer_cfg.get("screenshot_dir", "/tmp/uiAutoAgent/screenshots"))
         save_dir.mkdir(parents=True, exist_ok=True)
-        # Sanitize task_id to prevent path traversal: keep only safe characters
-        import re as _re
-        safe_task_id = _re.sub(r"[^a-zA-Z0-9_\-]", "_", data.get("task_id", "unknown"))[:64]
-        filename = f"{safe_task_id}_{int(time.time())}.png"
+        safe_task_id = re.sub(r"[^a-zA-Z0-9_\-]", "_", data.get("task_id", "unknown"))[:64]
+        suffix = Path(screenshot.filename or "").suffix.lower()
+        if suffix not in {".png", ".jpg", ".jpeg"}:
+            suffix = ".png"
+        filename = f"{safe_task_id}_{int(time.time())}{suffix}"
         screenshot_path = str(save_dir / filename)
         content = await screenshot.read()
         Path(screenshot_path).write_bytes(content)
@@ -331,22 +316,122 @@ async def post_failure(
 @app.get("/failures/groups")
 def get_failure_groups() -> Dict[str, Any]:
     groups = _aggregator.get_groups()
-    return {
-        "groups": {
-            fp: [r.to_dict() for r in reports]
-            for fp, reports in groups.items()
-        }
-    }
+    return {"groups": {fp: [r.to_dict() for r in reports] for fp, reports in groups.items()}}
 
 
-# ------ Code generation ------
+@app.post("/upload/batch/{batch_id}")
+async def upload_batch_artifacts(
+    batch_id: str,
+    node_id: str = Form(...),
+    task_results: str = Form(...),
+    video_flags: str = Form(default="{}"),
+    logs: List[UploadFile] = File(default=[]),
+    screenshots: List[UploadFile] = File(default=[]),
+) -> Dict[str, Any]:
+    try:
+        task_results_data = json.loads(task_results)
+        video_flags_data = json.loads(video_flags or "{}")
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON payload: {exc}") from exc
+
+    batch_dir = _artifact_store.get_batch_dir(batch_id)
+    log_dir = batch_dir / "logs"
+    screenshot_dir = batch_dir / "screenshots"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    screenshot_dir.mkdir(parents=True, exist_ok=True)
+
+    log_paths: Dict[str, str] = {}
+    screenshot_paths: Dict[str, List[str]] = {}
+
+    for upload in logs or []:
+        task_key, original_name = _extract_task_id(upload.filename or "log.txt")
+        save_path = log_dir / f"{task_key}_{_sanitize_filename(original_name)}"
+        await _stream_upload_to_disk(upload, save_path)
+        log_paths[task_key] = str(save_path)
+
+    for upload in screenshots or []:
+        task_key, original_name = _extract_task_id(upload.filename or "screenshot.png")
+        save_path = screenshot_dir / f"{task_key}_{_sanitize_filename(original_name)}"
+        await _stream_upload_to_disk(upload, save_path)
+        screenshot_paths.setdefault(task_key, []).append(str(save_path))
+
+    await _artifact_store.register_batch(
+        batch_id=batch_id,
+        node_id=node_id,
+        task_results=task_results_data,
+        log_paths=log_paths,
+        screenshot_paths=screenshot_paths,
+        video_flags=video_flags_data,
+    )
+    return {"status": "uploaded", "batch_id": batch_id}
+
+
+@app.get("/video/{node_id}/{task_id}")
+async def get_video(node_id: str, task_id: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=501,
+        content={
+            "status": "not_implemented",
+            "node_id": node_id,
+            "task_id": task_id,
+        },
+    )
+
+
+@app.websocket("/ws/{node_id}")
+async def executor_ws(websocket: WebSocket, node_id: str):
+    await _ws_manager.connect(node_id, websocket)
+    try:
+        async for msg in websocket.iter_json():
+            if msg["type"] == "batch_done":
+                batch_id = msg["batch_id"]
+                asyncio.create_task(_git_pull_and_heal(node_id, batch_id, msg.get("summary", {})))
+            elif msg["type"] == "validation_result":
+                logger.info("Validation result from %s: %s", node_id, msg)
+                _validation_events.append(msg)
+    except WebSocketDisconnect:
+        _ws_manager.disconnect(node_id)
+
+
+async def _git_pull_and_heal(node_id: str, batch_id: str, batch_summary: dict):
+    pull_result = await asyncio.to_thread(
+        subprocess.run,
+        ["git", "pull", "--ff-only"],
+        cwd=str(_ROOT),
+        capture_output=True,
+        text=True,
+    )
+    if pull_result.returncode != 0:
+        logger.warning("git pull failed before healing batch %s: %s", batch_id, pull_result.stderr.strip())
+
+    result = await _agent_server.heal(batch_id, batch_summary)
+    if result.success and result.fixed_files:
+        for file_path in result.fixed_files:
+            resolved_path = _ROOT / file_path
+            fixed_code = resolved_path.read_text(encoding="utf-8")
+            await _ws_manager.send(
+                node_id,
+                {
+                    "type": "script_update",
+                    "batch_id": batch_id,
+                    "file_path": file_path,
+                    "fixed_code": fixed_code,
+                    "rerun_task_ids": result.affected_task_ids,
+                },
+            )
+    else:
+        await _ws_manager.send(
+            node_id,
+            {
+                "type": "heal_failed",
+                "batch_id": batch_id,
+                "reason": result.summary,
+            },
+        )
+
 
 @app.post("/generate/aw")
 def generate_aw(req: GenerateAWRequest, background_tasks: BackgroundTasks) -> Dict[str, Any]:
-    """
-    Trigger LLM-based AW code generation.
-    The generation runs in background; result is written to disk.
-    """
     def _generate() -> None:
         gen = AWGenerator()
         path = gen.generate_and_write(
@@ -365,12 +450,28 @@ def generate_aw(req: GenerateAWRequest, background_tasks: BackgroundTasks) -> Di
     }
 
 
-# ---------------------------------------------------------------------------
-# Server entry point
-# ---------------------------------------------------------------------------
+async def _stream_upload_to_disk(upload: UploadFile, destination: Path) -> None:
+    async with aiofiles.open(destination, "wb") as output:
+        while True:
+            chunk = await upload.read(1024 * 1024)
+            if not chunk:
+                break
+            await output.write(chunk)
+    await upload.close()
+
+
+def _extract_task_id(filename: str) -> Tuple[str, str]:
+    if "__" not in filename:
+        return "unknown", filename
+    task_id, original_name = filename.split("__", 1)
+    return _sanitize_filename(task_id), original_name
+
+
+def _sanitize_filename(name: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9._\-]", "_", name)
+
 
 def start(host: str = "0.0.0.0", port: int = 8000) -> None:
-    """Start the central server."""
     logger.info("Starting central server on %s:%d", host, port)
     uvicorn.run(app, host=host, port=port, log_level="info")
 
