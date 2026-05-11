@@ -9,8 +9,12 @@ requests>=2.31.0
 fastapi>=0.111.0
 uvicorn[standard]>=0.30.0
 pydantic>=2.7.0
+aiofiles>=24.1.0
+python-multipart>=0.0.27
 
 # ── Executor / Drivers ──────────────────────────────────────────────────────
+aiohttp>=3.13.3
+websockets>=15.0.1
 # Appium Python client (for AppiumDriver)
 Appium-Python-Client>=3.1.0
 
@@ -33,3 +37,4 @@ pytest-asyncio>=0.23.0
 
 # ── Development utilities ────────────────────────────────────────────────────
 python-dotenv>=1.0.0   # load .env for API keys / credentials
+mypy>=1.15.0
